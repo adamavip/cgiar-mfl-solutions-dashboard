@@ -5,8 +5,8 @@
 
 import { Product, JournalArticle } from "./types";
 
-// Local file path for the JSON dataset
-export const JSON_DATA_URL = "Descriptions_of_innovations.json";
+// Local file path for the JSON dataset (must be in public folder for production)
+export const JSON_DATA_URL = "/Descriptions_of_innovations.json";
 
 export const BRAND_NAME = "CGIAR MFL";
 
