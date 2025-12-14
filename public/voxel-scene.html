@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voxel Garden Scene</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f0f8ff; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: #333;
+            font-family: sans-serif;
+            pointer-events: none;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+    </style>
+
+    <style>
+      /* Hides common overlay IDs and classes used in Three.js examples and generated code */
+      #info, #loading, #ui, #instructions, .label, .overlay, #description {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+      }
+      /* Ensure the body doesn't show selected text cursor interaction outside canvas */
+      body {
+        user-select: none !important;
+      }
+    </style>
+  </head>
+<body>
+    <div id="info">Voxel Garden</div>
+
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Configuration ---
+        const VOXEL_SIZE = 1;
+        const GRID_WIDTH = 26;
+        const GRID_DEPTH = 26;
+        
+        // Colors palette
+        const COLORS = {
+            GRASS_BORDER: 0x8BC34A,
+            PATHWAY: 0xE0E0E0,
+            SOIL: 0x5D4037,
+            SOIL_LIGHT: 0x795548,
+            LEAF_DARK: 0x2E7D32,
+            LEAF_LIGHT: 0x66BB6A,
+            LEAF_YELLOWISH: 0xC0CA33,
+            TRUNK: 0x8D6E63,
+            MELON_SKIN: 0x4CAF50,
+            MELON_STRIPE: 0x1B5E20,
+            CORN_STALK: 0x81C784,
+            STONE: 0xBDBDBD
+        };
+
+        // --- Setup Scene ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        // Isometric Camera Setup
+        const aspect = window.innerWidth / window.innerHeight;
+        const d = 25;
+        const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
+        camera.position.set(32, 32, 32); // High angle
+        camera.lookAt(scene.position);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.SoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 1.0;
+
+        // --- Lighting ---
+        const ambientLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        dirLight.position.set(20, 40, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.left = -30;
+        dirLight.shadow.camera.right = 30;
+        dirLight.shadow.camera.top = 30;
+        dirLight.shadow.camera.bottom = -30;
+        scene.add(dirLight);
+
+        // --- Helper Functions ---
+        
+        // Create a single voxel or a scaled box
+        function createBox(color, x, y, z, sx = 1, sy = 1, sz = 1) {
+            const geometry = new THREE.BoxGeometry(sx, sy, sz);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: color,
+                roughness: 0.8
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            return mesh;
+        }
+
+        // --- Building the Scene ---
+
+        const gardenGroup = new THREE.Group();
+        scene.add(gardenGroup);
+
+        // 1. The Base Platform (Soil)
+        const base = createBox(COLORS.SOIL_LIGHT, 0, -1, 0, GRID_WIDTH, 2, GRID_DEPTH);
+        gardenGroup.add(base);
+
+        // 2. The Grass Border
+        function createBorder() {
+            const thickness = 2;
+            const borderGroup = new THREE.Group();
+            
+            // Top and Bottom strips
+            borderGroup.add(createBox(COLORS.GRASS_BORDER, 0, 0.5, -GRID_DEPTH/2 + thickness/2, GRID_WIDTH, 1, thickness));
+            borderGroup.add(createBox(COLORS.GRASS_BORDER, 0, 0.5, GRID_DEPTH/2 - thickness/2, GRID_WIDTH, 1, thickness));
+            
+            // Left and Right strips
+            borderGroup.add(createBox(COLORS.GRASS_BORDER, -GRID_WIDTH/2 + thickness/2, 0.5, 0, thickness, 1, GRID_DEPTH - (thickness*2)));
+            borderGroup.add(createBox(COLORS.GRASS_BORDER, GRID_WIDTH/2 - thickness/2, 0.5, 0, thickness, 1, GRID_DEPTH - (thickness*2)));
+
+            gardenGroup.add(borderGroup);
+        }
+        createBorder();
+
+        // 3. The Gravel Paths (Fill the inside)
+        const innerSize = GRID_WIDTH - 4; // Minus border
+        const gravel = createBox(COLORS.PATHWAY, 0, 0.1, 0, innerSize, 0.2, innerSize);
+        gardenGroup.add(gravel);
+
+        // --- Garden Beds ---
+
+        function createBed(x, z, width, depth, type) {
+            const bedGroup = new THREE.Group();
+            
+            // Bed Soil
+            const soil = createBox(COLORS.SOIL, x, 0.5, z, width, 0.6, depth);
+            bedGroup.add(soil);
+
+            // Populate based on type
+            const startX = x - width/2;
+            const startZ = z - depth/2;
+
+            if (type === 'trees') {
+                // Trees and Stones (Top Right Area)
+                createVoxelTree(bedGroup, x - 2, 1, z - 1, 1.5);
+                createVoxelTree(bedGroup, x + 2, 1, z + 1, 1.2);
+                createVoxelTree(bedGroup, x - 1, 1, z + 2, 1.0);
+                
+                // Stones/Eggs
+                bedGroup.add(createBox(COLORS.STONE, x+1, 0.8, z-1, 1, 0.8, 1));
+                bedGroup.add(createBox(COLORS.STONE, x+1.5, 0.6, z-0.5, 0.7, 0.6, 0.7));
+            } 
+            else if (type === 'cabbage') {
+                // Large Leafy Greens (Top Left)
+                for(let ix = startX + 1.5; ix < startX + width; ix+=2.5) {
+                    for(let iz = startZ + 1.5; iz < startZ + depth; iz+=2.5) {
+                        createVoxelCabbage(bedGroup, ix, 0.8, iz);
+                    }
+                }
+            }
+            else if (type === 'bamboo') {
+                // Tall stalks (Right Side)
+                for(let ix = startX + 0.5; ix < startX + width; ix+=0.8) {
+                    for(let iz = startZ + 0.5; iz < startZ + depth; iz+=0.8) {
+                        // Random height variation
+                        let h = 2 + Math.random() * 3;
+                        bedGroup.add(createBox(COLORS.CORN_STALK, ix, 0.8 + h/2, iz, 0.2, h, 0.2));
+                    }
+                }
+            }
+            else if (type === 'melons') {
+                // Rows of Melons/Cabbages (Center Right)
+                for(let ix = startX + 1; ix < startX + width; ix+=2) {
+                    // Row mound
+                    bedGroup.add(createBox(COLORS.SOIL_LIGHT, ix, 0.9, z, 0.8, 0.2, depth - 1));
+                    for(let iz = startZ + 1; iz < startZ + depth; iz+=2) {
+                        createVoxelMelon(bedGroup, ix, 1.2, iz);
+                    }
+                }
+            }
+            else if (type === 'small_greens') {
+                // Rows of small yellow/green plants (Top Middle)
+                for(let iz = startZ + 1; iz < startZ + depth; iz+=1.5) {
+                    bedGroup.add(createBox(COLORS.SOIL_LIGHT, x, 0.9, iz, width - 1, 0.2, 0.6));
+                    for(let ix = startX + 1; ix < startX + width; ix+=1.2) {
+                        createSmallPlant(bedGroup, ix, 1.0, iz);
+                    }
+                }
+            }
+
+            gardenGroup.add(bedGroup);
+        }
+
+        // --- Plant Generators ---
+
+        function createVoxelTree(parent, x, y, z, scale) {
+            const trunkH = 1.5 * scale;
+            const trunk = createBox(COLORS.TRUNK, x, y + trunkH/2, z, 0.4 * scale, trunkH, 0.4 * scale);
+            parent.add(trunk);
+
+            // Voxel Leaves (Spherical blob approximation)
+            const foliageColor = COLORS.LEAF_LIGHT;
+            const size = 1.2 * scale;
+            const topY = y + trunkH + size/2;
+
+            // Center
+            parent.add(createBox(foliageColor, x, topY, z, size*1.5, size, size*1.5));
+            // Top
+            parent.add(createBox(foliageColor, x, topY + size/0.8, z, size, size/2, size));
+            // Sides details to make it look "voxel-y"
+            parent.add(createBox(foliageColor, x + size/2, topY, z + size/2, size/2, size/2, size/2));
+            parent.add(createBox(foliageColor, x - size/2, topY, z - size/2, size/2, size/2, size/2));
+        }
+
+        function createVoxelCabbage(parent, x, y, z) {
+            // Center heart
+            parent.add(createBox(COLORS.LEAF_LIGHT, x, y+0.2, z, 0.8, 0.6, 0.8));
+            // Leaves around
+            parent.add(createBox(COLORS.LEAF_DARK, x+0.5, y, z, 0.2, 0.4, 0.8));
+            parent.add(createBox(COLORS.LEAF_DARK, x-0.5, y, z, 0.2, 0.4, 0.8));
+            parent.add(createBox(COLORS.LEAF_DARK, x, y, z+0.5, 0.8, 0.4, 0.2));
+            parent.add(createBox(COLORS.LEAF_DARK, x, y, z-0.5, 0.8, 0.4, 0.2));
+        }
+
+        function createVoxelMelon(parent, x, y, z) {
+            const size = 0.7;
+            // Main body
+            parent.add(createBox(COLORS.MELON_SKIN, x, y, z, size, size, size));
+            // Stripe detail (voxel style)
+            parent.add(createBox(COLORS.MELON_STRIPE, x, y, z, size + 0.05, size, size/3));
+            parent.add(createBox(COLORS.MELON_STRIPE, x, y, z, size/3, size, size + 0.05));
+        }
+
+        function createSmallPlant(parent, x, y, z) {
+            // Stem
+            parent.add(createBox(COLORS.LEAF_DARK, x, y+0.2, z, 0.2, 0.4, 0.2));
+            // Flower/Fruit top
+            parent.add(createBox(COLORS.LEAF_YELLOWISH, x, y+0.5, z, 0.4, 0.4, 0.4));
+        }
+
+        // --- Layout Definitions ---
+
+        // Grid system: -11 to 11 roughly
+        // Top Left: Large Cabbage
+        createBed(-6, -6, 8, 8, 'cabbage');
+
+        // Top Middle: Small Greens
+        createBed(0, -6, 3, 8, 'small_greens');
+
+        // Top Right (Back): Trees
+        createBed(6, -6, 8, 8, 'trees');
+
+        // Bottom Right: Bamboo/Stalks
+        createBed(7, 4, 6, 10, 'bamboo');
+
+        // Center Area: Melons
+        createBed(-1, 4, 9, 10, 'melons');
+        
+        // Far Left Strip: Small bushes
+        createBed(-7, 4, 2, 10, 'small_greens');
+
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            const aspect = window.innerWidth / window.innerHeight;
+            camera.left = -d * aspect;
+            camera.right = d * aspect;
+            camera.top = d;
+            camera.bottom = -d;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+
+    </script>
+</body>
+</html>
